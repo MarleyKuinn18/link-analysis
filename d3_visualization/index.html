@@ -1,0 +1,195 @@
+<html>
+  <head>
+    <title>Clustering, betweenness centrality and eigenvector centrality</title>
+    <meta charset="utf-8" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsnetworkx/0.3.4/jsnetworkx.js"></script>
+    <script src="https://bl.ocks.org/emeeks/raw/9915de8989e2a5c34652/7d22d8e4f05e944ced10408ae64579beff3c0858/jsnetworkx.js" type="text/javascript"></script>
+  </head>
+  <style>
+    svg {
+      height: 480px;
+      width: 940px;
+      border: 1px solid gray;
+    }
+  </style>
+  <body>
+    <div id="viz">
+      <svg class="main">
+      </svg>
+    </div>
+  </body>
+  <footer>
+    <script>
+      d3.csv("export-graph.csv", function(error,data) {
+        createNetwork(data)
+      });
+
+      function createNetwork(edgelist) {
+        var nodeHash = {};
+        var edgeHash = {};
+        var nodes = [];
+        var edges = [];
+
+        edgelist.forEach(function (edge) {
+          if (!nodeHash[edge.source]) {
+            nodeHash[edge.source] = {id: edge.source, label: edge.source};
+            nodes.push(nodeHash[edge.source]);
+          }
+
+          if (!nodeHash[edge.target]) {
+            nodeHash[edge.target] = {id: edge.target, label: edge.target};
+            nodes.push(nodeHash[edge.target]);
+          }
+
+          if (edge.weight == 5) {
+            edges.push({id: nodeHash[edge.source].id + "-" + nodeHash[edge.target].id, 
+                        source: nodeHash[edge.source], target: nodeHash[edge.target], 
+                        weight: edge.weight});
+          }
+        });
+
+        createForceNetwork(nodes, edges);
+        runData(nodes, edges);
+      };
+
+      function createForceNetwork(nodes, edges) {
+        var force = d3.layout.force().nodes(nodes).links(edges)
+        .size([500,500])
+        .charge(-300)
+        .chargeDistance(100)
+        .gravity(0.05)
+        .on("tick", updateNetwork);
+
+        var drag = force.drag();
+
+        var edgeEnter = d3.select("svg.main").selectAll("g.edge")
+        .data(edges, function (d) {return d.id})
+        .enter()
+        .append("g")
+        .attr("class", "edge");
+
+        edgeEnter
+          .append("line")
+          .style("stroke-width", function (d) {return d.border ? "3px" : "1px"})
+          .style("stroke", "black")
+          .style("pointer-events", "none");
+
+        var nodeEnter = d3.select("svg.main").selectAll("g.node")
+        .data(nodes, function (d) {return d.id})
+        .enter()
+        .append("g")
+        .attr("class", "node")
+        .call(drag);
+
+        nodeEnter.append("circle")
+          .attr("r", 8)
+          .attr("class", "foreground")
+        //  .style("fill", function (d) {return colors(d.module)})
+          .style("stroke", "black")
+          .style("stroke-width", function (d) {return d.border ? "3px" : "1px"})
+
+        nodeEnter.append("text")
+          .style("text-anchor", "middle")
+          .attr("y", 3)
+          .style("stroke-width", "1px")
+          .style("stroke-opacity", 0.75)
+          .style("stroke", "white")
+          .style("font-size", "8px")
+          .text(function (d) {return d.id})
+          .style("pointer-events", "none")
+
+        nodeEnter.append("text")
+          .style("text-anchor", "middle")
+          .attr("y", 3)
+          .style("font-size", "8px")
+          .text(function (d) {return d.id})
+          .style("pointer-events", "none")
+
+        force.start();
+      }
+
+      function updateNetwork(e) {
+        d3.select("svg.main").selectAll("line")
+          .attr("x1", function (d) {return d.source.x})
+          .attr("y1", function (d) {return d.source.y})
+          .attr("x2", function (d) {return d.target.x})
+          .attr("y2", function (d) {return d.target.y});
+
+        d3.select("svg.main").selectAll("g.node")
+          .attr("transform", function (d) {return "translate(" + d.x + "," + d.y + ")"});
+      }
+
+      var colorScale = d3.scale.linear().domain([0,1]).range(["#ffff99", "#ff6600"]);
+      var sizeScale = d3.scale.linear().domain([0,1]).range([4,10]);
+
+      function runData(nodes, edges) {
+        var node_data = nodes.map(function (d) {return d.id});
+        var edge_data = edges.map(function (d) {return [d.source.id, d.target.id]; });
+
+        var G = new jsnx.Graph();
+        G.addNodesFrom(node_data);
+        G.addEdgesFrom(edge_data);
+
+        var betweenness = jsnx.betweennessCentrality(G);
+        var eigenvector = jsnx.eigenvectorCentrality(G);
+        var clustering = jsnx.clustering(G);
+        //var shortestPath = jsnx.shortestPath(G, {source: 28, target: 31})
+
+        //console.log(shortestPath);
+
+        var evExtent = d3.extent(d3.values(eigenvector._stringValues));
+        var bwExtent = d3.extent(d3.values(betweenness._stringValues));
+        var clExtent = d3.extent(d3.values(clustering._stringValues));
+
+        byEV();
+
+        function byEV() {
+          sizeScale.domain(clExtent);
+          colorScale.domain(evExtent);
+          d3.selectAll("circle")
+            .transition()
+            .duration(1000)
+            .style("fill", function (d) {return colorScale(eigenvector._stringValues[d.id])})
+            .attr("r", function (d) {return sizeScale(clustering._stringValues[d.id])})
+            .transition()
+            .delay(2000)
+            .each("end", function() {
+            byBW();
+          })
+        }
+
+        function byBW() {
+          sizeScale.domain(evExtent);
+          colorScale.domain(bwExtent);
+          d3.selectAll("circle")
+            .transition()
+            .duration(1000)
+            .style("fill", function (d) {return colorScale(betweenness._stringValues[d.id])})
+            .attr("r", function (d) {return sizeScale(eigenvector._stringValues[d.id])})
+            .transition()
+            .delay(2000)
+            .each("end", function() {
+            byCL();
+          })
+
+        }
+
+        function byCL() {
+          sizeScale.domain(bwExtent);
+          colorScale.domain(clExtent);
+          d3.selectAll("circle")
+            .transition()
+            .duration(1000)
+            .style("fill", function (d) {return colorScale(clustering._stringValues[d.id])})
+            .attr("r", function (d) {return sizeScale(betweenness._stringValues[d.id])})
+            .transition()
+            .delay(2000)
+            .each("end", function() {
+            byEV();
+          });
+        }
+      }
+    </script>
+  </footer>
+
+</html>
